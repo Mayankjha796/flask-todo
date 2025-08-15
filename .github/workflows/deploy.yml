@@ -37,6 +37,7 @@ jobs:
 
        
       - name: Build, tag, and push Promtail image
+        working-directory: ${{ github.workspace }}
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
