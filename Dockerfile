@@ -1,13 +1,24 @@
-# Use multi-stage build for smaller image
-FROM python:3.11-slim as builder
+# Use a lightweight Python base image
+FROM python:3.12-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
+
+# Copy only requirements first (for caching)
 COPY requirements.txt .
+
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-FROM python:3.11-slim
-WORKDIR /app
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY . /app
+# Copy the rest of the app
+COPY . .
+
+# Expose port
 EXPOSE 8080
-ENV PORT=8080
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:8080", "app:app"]
+
+# Run Gunicorn with 4 worker processes
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app", "--workers", "4"]
