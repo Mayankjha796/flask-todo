@@ -49,4 +49,4 @@ jobs:
       - name: Terraform Apply (Update ECS Service)
         env:
           IMAGE_TAG: ${{ github.sha }}
-        run: terraform apply -auto-approve -var="image_tag=${IMAGE_TAG::7}"
+        run: terraform apply -auto-approve -var="image_tag=$(echo $GITHUB_SHA | cut -c1-7)"
