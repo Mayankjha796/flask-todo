@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 import os
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 @app.route('/')
 def index():
@@ -11,6 +11,6 @@ def index():
 def health():
     return jsonify({"status": "ok"}), 200
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
