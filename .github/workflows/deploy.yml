@@ -39,8 +39,8 @@ jobs:
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
           TASK_FAMILY="my-flask-app-task"
-          CLUSTER_NAME="my-cluster"
-          SERVICE_NAME="my-service"
+          CLUSTER_NAME="my-flask-app-cluster"
+          SERVICE_NAME="my-flask-app-task-service-8mcd5ejj"
 
           # Get latest task definition JSON
           TASK_DEF=$(aws ecs describe-task-definition \
