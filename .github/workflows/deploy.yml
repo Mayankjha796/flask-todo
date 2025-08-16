@@ -30,32 +30,45 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build  --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:latest $ECR_REGISTRY/$ECR_REPOSITORY:${IMAGE_TAG::7}
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:${IMAGE_TAG::7}
 
-
-
       - name: Update ECS service
+        env:
+          CLUSTER_NAME: my-flask-app-cluster
+          SERVICE_NAME: my-flask-app-service
+          TASK_FAMILY: my-flask-app-task
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
-          CLUSTER_NAME=my-flask-app-cluster
-          SERVICE_NAME=my-flask-app-service
-          TASK_FAMILY=my-flask-app-task
 
-          # Get current task definition JSON
-          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY)
+          # Get current task definition
+          aws ecs describe-task-definition --task-definition $TASK_FAMILY \
+            --query taskDefinition > task-def.json
 
-          # Create new task definition with updated image
-          NEW_TASK_DEF=$(echo $TASK_DEF | \
-            jq --arg IMAGE "dockerhubusername/myflaskapp:$IMAGE_TAG" \
-            '.taskDefinition | .containerDefinitions[0].image=$IMAGE | {family: .family, containerDefinitions: .containerDefinitions, networkMode: .networkMode, requiresCompatibilities: .requiresCompatibilities, cpu: .cpu, memory: .memory, executionRoleArn: .executionRoleArn, taskRoleArn: .taskRoleArn}')
+          # Remove fields that cannot be reused
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities)' task-def.json > new-task-def.json
 
-          echo "$NEW_TASK_DEF" > new-task-def.json
+          # Update ONLY the flask container's image
+          jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '
+            .containerDefinitions |= map(
+              if .name == "my-flask-app" then .image = $IMAGE else . end
+            )
+          ' new-task-def.json > final-task-def.json
 
-          # Register new task definition
-          REVISION=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --query 'taskDefinition.revision' --output text)
+          # Register new task definition revision
+          REVISION=$(aws ecs register-task-definition \
+            --cli-input-json file://final-task-def.json \
+            --query 'taskDefinition.revision' --output text)
 
-          # Update ECS service to use new revision
-          aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_FAMILY:$REVISION
+          echo "New task revision: $REVISION"
+
+          # Update service with new revision
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $TASK_FAMILY:$REVISION \
+            --force-new-deployment
