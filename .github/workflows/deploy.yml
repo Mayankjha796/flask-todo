@@ -37,30 +37,32 @@ jobs:
 
       - name: Update ECS task definition with new image
         run: |
-          TASK_DEFINITION_NAME=my-task-def
-          CONTAINER_NAME=my-container
-          NEW_IMAGE=590183744625.dkr.ecr.ap-south-1.amazonaws.com/my-repo:59afa66
+          IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          TASK_FAMILY="my-flask-app-task"
+          CLUSTER_NAME="my-cluster"
+          SERVICE_NAME="my-service"
 
-          # Fetch the current task definition
-          aws ecs describe-task-definition \
-            --task-definition $TASK_DEFINITION_NAME \
-            --query "taskDefinition" > task-def.json
+          # Get latest task definition JSON
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition $TASK_FAMILY \
+            --query 'taskDefinition')
 
-          # Update the image in containerDefinitions
-          cat task-def.json | \
-            jq --arg IMAGE "$NEW_IMAGE" \
-              --arg NAME "$CONTAINER_NAME" \
-              '.containerDefinitions |= map(if .name == $NAME then .image = $IMAGE else . end)' \
-            > new-task-def.json
+          # Replace only the image in containerDefinitions
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq \
+            --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-flask-app:$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $IMAGE')
 
           # Register new revision
-          aws ecs register-task-definition \
+          echo $NEW_TASK_DEF > new-task-def.json
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
             --cli-input-json file://new-task-def.json \
-            --query "taskDefinition.taskDefinitionArn" --output text > new-task-def-arn.txt
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
 
           # Update service to use new revision
           aws ecs update-service \
-            --cluster my-cluster \
-            --service my-service \
-            --task-definition $(cat new-task-def-arn.txt)
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $NEW_TASK_DEF_ARN
+
 
