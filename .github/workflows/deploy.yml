@@ -35,40 +35,29 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:${IMAGE_TAG::7}
 
-      - name: Update ECS service
-        env:
-          CLUSTER_NAME: my-flask-app-cluster
-          SERVICE_NAME: my-flask-app-service
-          TASK_FAMILY: my-flask-app-task
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+      - name: Update ECS task definition with new image
         run: |
           IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
 
-          # Get current task definition
-          aws ecs describe-task-definition --task-definition $TASK_FAMILY \
-            --query taskDefinition > task-def.json
+          # Get the latest task definition JSON
+          aws ecs describe-task-definition \
+            --task-definition my-task-def \
+            --query taskDefinition \
+            > task-def.json
 
-          # Remove fields that cannot be reused
-          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities)' task-def.json > new-task-def.json
+          # Remove unwanted fields
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' task-def.json > new-task-def.json
 
-          # Update ONLY the flask container's image
-          jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '
-            .containerDefinitions |= map(
-              if .name == "my-flask-app" then .image = $IMAGE else . end
-            )
-          ' new-task-def.json > final-task-def.json
+          # Update only the image
+          jq --arg IMAGE "123456789012.dkr.ecr.ap-south-1.amazonaws.com/my-repo:$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $IMAGE' new-task-def.json > final-task-def.json
 
-          # Register new task definition revision
-          REVISION=$(aws ecs register-task-definition \
-            --cli-input-json file://final-task-def.json \
-            --query 'taskDefinition.revision' --output text)
+          # Register the new task definition
+          aws ecs register-task-definition --cli-input-json file://final-task-def.json
 
-          echo "New task revision: $REVISION"
-
-          # Update service with new revision
+          # Update the ECS service to use the new task definition
           aws ecs update-service \
-            --cluster $CLUSTER_NAME \
-            --service $SERVICE_NAME \
-            --task-definition $TASK_FAMILY:$REVISION \
+            --cluster my-cluster \
+            --service my-service \
             --force-new-deployment
+
